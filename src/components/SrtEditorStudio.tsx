@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   FileText, 
   Upload, 
@@ -13,17 +13,16 @@ import {
   Video, 
   Volume2, 
   Sparkles, 
-  Loader2,
-  Check,
-  Film,
-  CheckSquare,
-  Square,
-  ListFilter,
-  Users,
-  FastForward,
-  Rewind,
-  CheckCircle2,
-  AlertCircle
+  Loader2, 
+  Check, 
+  Film, 
+  CheckSquare, 
+  Square, 
+  Users, 
+  CheckCircle2, 
+  Eye, 
+  Minimize2, 
+  Maximize2 
 } from 'lucide-react';
 import { SrtItem } from '../types';
 import { 
@@ -36,6 +35,7 @@ import {
 } from '../utils/srtParser';
 import { saveStoredSrtItems } from '../utils/storage';
 import { speakBrowserText, stopSpeaking } from '../utils/khmerSpeech';
+import { SrtVideoPreview } from './SrtVideoPreview';
 
 interface SrtEditorStudioProps {
   appLang: 'km' | 'en';
@@ -52,11 +52,12 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
 }) => {
   const isKm = appLang === 'km';
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const videoInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  // Video State
-  const [videoSrc, setVideoSrc] = useState<string>('');
+  // Video State (Preload standard demo video so preview is active immediately)
+  const [videoSrc, setVideoSrc] = useState<string>(
+    'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4'
+  );
   const [isPlayingVideo, setIsPlayingVideo] = useState<boolean>(false);
   const [videoCurrentTime, setVideoCurrentTime] = useState<number>(0);
   const [videoDuration, setVideoDuration] = useState<number>(0);
@@ -66,6 +67,12 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
   const [subColor, setSubColor] = useState<string>('#ffffff');
   const [subBgStyle, setSubBgStyle] = useState<'cinema' | 'pill' | 'shadow'>('cinema');
   const [subPosition, setSubPosition] = useState<'bottom' | 'center' | 'top'>('bottom');
+
+  // Real-time Editing Preview Cue
+  const [focusedCue, setFocusedCue] = useState<SrtItem | null>(null);
+
+  // Floating Mini Video Preview (Picture-in-Picture)
+  const [isMiniPreviewVisible, setIsMiniPreviewVisible] = useState<boolean>(false);
 
   // Multi-Selection State for Batch Processing
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -78,25 +85,40 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
   const [activePlayingCueId, setActivePlayingCueId] = useState<string | null>(null);
   const [batchSuccessMessage, setBatchSuccessMessage] = useState<string | null>(null);
 
-  // Currently active subtitle on video
+  // Currently active subtitle on video according to timeline
   const activeSubtitle = srtList.find((cue) => {
     const s = timestampToSeconds(cue.startTime);
     const e = timestampToSeconds(cue.endTime);
     return videoCurrentTime >= s && videoCurrentTime <= e;
   });
 
-  // Handle Video Time Update
-  const handleTimeUpdate = () => {
-    if (videoRef.current) {
-      setVideoCurrentTime(videoRef.current.currentTime);
-    }
-  };
+  // Attach Video event listeners
+  useEffect(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl) return;
 
-  const handleLoadedMetadata = () => {
-    if (videoRef.current) {
-      setVideoDuration(videoRef.current.duration);
-    }
-  };
+    const onTimeUpdate = () => {
+      setVideoCurrentTime(videoEl.currentTime);
+    };
+
+    const onLoadedMeta = () => {
+      setVideoDuration(videoEl.duration);
+    };
+
+    const onEnded = () => {
+      setIsPlayingVideo(false);
+    };
+
+    videoEl.addEventListener('timeupdate', onTimeUpdate);
+    videoEl.addEventListener('loadedmetadata', onLoadedMeta);
+    videoEl.addEventListener('ended', onEnded);
+
+    return () => {
+      videoEl.removeEventListener('timeupdate', onTimeUpdate);
+      videoEl.removeEventListener('loadedmetadata', onLoadedMeta);
+      videoEl.removeEventListener('ended', onEnded);
+    };
+  }, [videoSrc]);
 
   // Toggle Video Play/Pause
   const toggleVideoPlay = () => {
@@ -110,9 +132,10 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
     }
   };
 
-  // Jump Video to Cue
-  const jumpVideoToCue = (timeStr: string) => {
-    const sec = timestampToSeconds(timeStr);
+  // Jump Video to Cue and highlight preview
+  const jumpVideoToCue = (cue: SrtItem) => {
+    const sec = timestampToSeconds(cue.startTime);
+    setFocusedCue(cue);
     if (videoRef.current) {
       videoRef.current.currentTime = sec;
       videoRef.current.play();
@@ -120,22 +143,6 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
     } else {
       setVideoCurrentTime(sec);
     }
-  };
-
-  // Upload Video File
-  const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    setVideoSrc(url);
-    if (videoRef.current) {
-      videoRef.current.load();
-    }
-  };
-
-  // Load Built-in Demo Video
-  const loadDemoVideo = () => {
-    setVideoSrc('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4');
   };
 
   // Import .SRT File
@@ -205,13 +212,18 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
     const updated = [...srtList, newCue];
     setSrtList(updated);
     saveStoredSrtItems(updated);
+    setFocusedCue(newCue);
   };
 
-  // Update Cue Field
+  // Update Cue Field and sync real-time preview
   const handleUpdateCue = (id: string, field: keyof SrtItem, val: any) => {
     const updated = srtList.map((cue) => {
       if (cue.id === id) {
-        return { ...cue, [field]: val };
+        const modified = { ...cue, [field]: val };
+        if (field === 'text') {
+          setFocusedCue(modified);
+        }
+        return modified;
       }
       return cue;
     });
@@ -225,11 +237,13 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
     const reindexed = filtered.map((c, i) => ({ ...c, index: i + 1 }));
     setSrtList(reindexed);
     saveStoredSrtItems(reindexed);
-    // Also remove from selection if present
     if (selectedIds.has(id)) {
       const next = new Set(selectedIds);
       next.delete(id);
       setSelectedIds(next);
+    }
+    if (focusedCue?.id === id) {
+      setFocusedCue(null);
     }
   };
 
@@ -250,6 +264,7 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
     const updated = [...srtList, newCue];
     setSrtList(updated);
     saveStoredSrtItems(updated);
+    setFocusedCue(newCue);
   };
 
   // Shift timing for all cues
@@ -278,7 +293,6 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
   // MULTI-SELECTION & BATCH PROCESSING TOOLS
   // -------------------------------------------------------------
 
-  // Toggle single item selection
   const toggleSelect = (id: string) => {
     const next = new Set(selectedIds);
     if (next.has(id)) {
@@ -289,18 +303,15 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
     setSelectedIds(next);
   };
 
-  // Select all lines
   const handleSelectAll = () => {
     const all = new Set(srtList.map((item) => item.id));
     setSelectedIds(all);
   };
 
-  // Deselect all lines
   const handleDeselectAll = () => {
     setSelectedIds(new Set());
   };
 
-  // Invert selection
   const handleInvertSelection = () => {
     const next = new Set<string>();
     srtList.forEach((item) => {
@@ -311,7 +322,6 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
     setSelectedIds(next);
   };
 
-  // Select by speaker role
   const handleSelectBySpeaker = (role: 'male' | 'female' | 'narrator') => {
     const next = new Set(selectedIds);
     srtList.forEach((item) => {
@@ -322,9 +332,8 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
     setSelectedIds(next);
   };
 
-  // Batch Auto-Translate Selected Lines (Simultaneously via Gemini API)
+  // Batch Auto-Translate Selected Lines simultaneously via Gemini API
   const handleBatchTranslateSelected = async () => {
-    // If none selected, default to all cues
     const targetItems = selectedIds.size > 0 
       ? srtList.filter((item) => selectedIds.has(item.id))
       : srtList;
@@ -348,7 +357,6 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
 
       const data = await res.json();
       if (data && Array.isArray(data.srtItems)) {
-        // Create lookup dictionary by id or index
         const transMap = new Map<string, string>();
         data.srtItems.forEach((trans: any, idx: number) => {
           if (trans.id) {
@@ -358,7 +366,6 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
           }
         });
 
-        // Merge updated translations back into srtList
         const merged = srtList.map((orig) => {
           if (transMap.has(orig.id)) {
             return {
@@ -390,7 +397,6 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
     }
   };
 
-  // Batch delete selected lines
   const handleBatchDeleteSelected = () => {
     if (selectedIds.size === 0) return;
     const confirmMsg = isKm 
@@ -406,7 +412,6 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
     }
   };
 
-  // Batch assign speaker role to selected lines
   const handleBatchAssignSpeaker = (role: 'male' | 'female' | 'narrator') => {
     if (selectedIds.size === 0) return;
     const updated = srtList.map((cue) => {
@@ -423,7 +428,6 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
     saveStoredSrtItems(updated);
   };
 
-  // Batch time shift for selected lines only
   const handleBatchShiftTiming = (delta: number) => {
     if (selectedIds.size === 0) {
       handleShiftTiming(delta);
@@ -449,7 +453,7 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
   const selectedCount = selectedIds.size;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
       {/* Top Action Bar */}
       <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm">
         <div className="flex items-center space-x-2">
@@ -467,8 +471,22 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
           )}
         </div>
 
-        {/* Buttons: Import, Export, Add Cue */}
+        {/* Buttons: Floating Mini Preview toggle, Import, Export, Add Cue */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Toggle Floating Mini Preview Button */}
+          <button
+            onClick={() => setIsMiniPreviewVisible(!isMiniPreviewVisible)}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+              isMiniPreviewVisible
+                ? 'bg-purple-600/30 text-purple-300 border-purple-500/50 shadow-md shadow-purple-500/20'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+            }`}
+            title={isKm ? 'បើកផ្ទាំងវីដេអូ Preview តូចបណ្តែត (Picture-in-Picture)' : 'Toggle Floating Mini Video Preview'}
+          >
+            <Eye className="w-3.5 h-3.5 text-purple-400" />
+            <span>{isKm ? (isMiniPreviewVisible ? 'បិទ Mini Preview' : 'ផ្ទាំង Preview តូច (PiP)') : (isMiniPreviewVisible ? 'Hide Mini Preview' : 'Mini Video Preview')}</span>
+          </button>
+
           <input
             type="file"
             accept=".srt,.txt"
@@ -510,197 +528,88 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
         </div>
       </div>
 
-      {/* Main Grid: Video Player with Subtitle Overlay + SRT Editor Table */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left: Video Player with Real-time Subtitle Overlay */}
-        <div className="lg:col-span-5 space-y-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-300 flex items-center space-x-1.5">
-                <Film className="w-4 h-4 text-purple-400" />
-                <span>{isKm ? 'ទស្សនាវីដេអូ & Subtitle ផ្ទាល់' : 'Live Video Subtitle Player'}</span>
-              </span>
+      {/* Main Grid: Video Preview in Sticky Sidebar + Subtitles Editor with Batch Tool */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Left: Dedicated Sticky Video Preview Sidebar Component */}
+        <div className="lg:col-span-5 space-y-4 lg:sticky lg:top-20">
+          <SrtVideoPreview
+            videoRef={videoRef}
+            videoSrc={videoSrc}
+            setVideoSrc={setVideoSrc}
+            videoCurrentTime={videoCurrentTime}
+            setVideoCurrentTime={setVideoCurrentTime}
+            videoDuration={videoDuration}
+            isPlayingVideo={isPlayingVideo}
+            toggleVideoPlay={toggleVideoPlay}
+            activeSubtitle={activeSubtitle}
+            focusedCue={focusedCue}
+            subFontSize={subFontSize}
+            setSubFontSize={setSubFontSize}
+            subColor={subColor}
+            setSubColor={setSubColor}
+            subBgStyle={subBgStyle}
+            setSubBgStyle={setSubBgStyle}
+            subPosition={subPosition}
+            setSubPosition={setSubPosition}
+            isKm={isKm}
+            onToggleMini={() => setIsMiniPreviewVisible(true)}
+          />
 
-              {/* Video upload or demo */}
-              <div className="flex items-center space-x-2">
-                <input
-                  type="file"
-                  accept="video/*"
-                  ref={videoInputRef}
-                  onChange={handleVideoUpload}
-                  className="hidden"
-                />
-                <button
-                  onClick={() => videoInputRef.current?.click()}
-                  className="px-2 py-1 rounded-lg bg-slate-800 text-[11px] text-slate-300 hover:text-white border border-slate-700 cursor-pointer"
-                >
-                  {isKm ? 'ជ្រើសរើសវីដេអូ' : 'Choose Video'}
-                </button>
-                <button
-                  onClick={loadDemoVideo}
-                  className="px-2 py-1 rounded-lg bg-indigo-600/20 text-[11px] text-indigo-300 hover:bg-indigo-600/30 border border-indigo-500/30 cursor-pointer"
-                >
-                  {isKm ? 'វីដេអូគំរូ' : 'Demo Video'}
-                </button>
-              </div>
+          {/* Timing Shift Panel */}
+          <div className="flex items-center justify-between p-3 bg-slate-900 border border-slate-800 rounded-xl text-xs shadow-sm">
+            <span className="text-slate-400 flex items-center space-x-1.5">
+              <Clock className="w-3.5 h-3.5 text-amber-400" />
+              <span>{isKm ? 'រំកិលម៉ោងទាំងអស់:' : 'Sync Shift (All):'}</span>
+            </span>
+            <div className="flex items-center space-x-1.5">
+              <button
+                onClick={() => handleShiftTiming(-1.0)}
+                className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold"
+                title="-1.0 second"
+              >
+                -1.0s
+              </button>
+              <button
+                onClick={() => handleShiftTiming(-0.5)}
+                className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold"
+                title="-0.5 second"
+              >
+                -0.5s
+              </button>
+              <button
+                onClick={() => handleShiftTiming(0.5)}
+                className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold"
+                title="+0.5 second"
+              >
+                +0.5s
+              </button>
+              <button
+                onClick={() => handleShiftTiming(1.0)}
+                className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold"
+                title="+1.0 second"
+              >
+                +1.0s
+              </button>
             </div>
-
-            {/* Video Viewport Container with Synchronized Subtitle Overlay */}
-            <div className="relative aspect-video bg-black rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center group shadow-inner">
-              {videoSrc ? (
-                <video
-                  ref={videoRef}
-                  src={videoSrc}
-                  onTimeUpdate={handleTimeUpdate}
-                  onLoadedMetadata={handleLoadedMetadata}
-                  onClick={toggleVideoPlay}
-                  className="w-full h-full object-contain cursor-pointer"
-                  playsInline
-                />
-              ) : (
-                <div className="text-center p-6 text-slate-500">
-                  <Video className="w-12 h-12 mx-auto text-slate-700 mb-2" />
-                  <p className="text-xs">{isKm ? 'សូមបញ្ចូលវីដេអូរបស់អ្នក ឬចុច "វីដេអូគំរូ"' : 'Upload a video file or click "Demo Video" to test subtitles'}</p>
-                </div>
-              )}
-
-              {/* DYNAMIC SUBTITLE OVERLAY */}
-              {activeSubtitle && (
-                <div
-                  className={`absolute left-0 right-0 px-4 text-center pointer-events-none transition-all duration-150 z-20 ${
-                    subPosition === 'top'
-                      ? 'top-4'
-                      : subPosition === 'center'
-                      ? 'top-1/2 -translate-y-1/2'
-                      : 'bottom-4'
-                  }`}
-                >
-                  <span
-                    style={{
-                      fontSize: `${subFontSize}px`,
-                      color: subColor,
-                    }}
-                    className={`inline-block font-semibold px-3 py-1 rounded-lg leading-snug max-w-[90%] transition-all ${
-                      subBgStyle === 'cinema'
-                        ? 'bg-black/80 shadow-md shadow-black/50 border border-white/10'
-                        : subBgStyle === 'pill'
-                        ? 'bg-indigo-950/90 text-indigo-100 border border-indigo-500/40'
-                        : 'drop-shadow-[0_2px_4px_rgba(0,0,0,1)]'
-                    }`}
-                  >
-                    {activeSubtitle.speaker !== 'narrator' && (
-                      <span className="text-xs opacity-75 mr-1 font-normal">
-                        [{activeSubtitle.speaker === 'male' ? (isKm ? 'ប្រុស' : 'Male') : (isKm ? 'ស្រី' : 'Female')}]:
-                      </span>
-                    )}
-                    {activeSubtitle.text}
-                  </span>
-                </div>
-              )}
-
-              {/* Play / Pause overlay indicator on hover */}
-              {videoSrc && (
-                <button
-                  onClick={toggleVideoPlay}
-                  className="absolute bottom-2 left-2 p-2 rounded-lg bg-black/60 text-white backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  {isPlayingVideo ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                </button>
-              )}
-            </div>
-
-            {/* Video Timeline & Scrubbing */}
-            {videoSrc && (
-              <div className="space-y-1">
-                <input
-                  type="range"
-                  min={0}
-                  max={videoDuration || 100}
-                  step={0.1}
-                  value={videoCurrentTime}
-                  onChange={(e) => {
-                    const sec = parseFloat(e.target.value);
-                    if (videoRef.current) {
-                      videoRef.current.currentTime = sec;
-                      setVideoCurrentTime(sec);
-                    }
-                  }}
-                  className="w-full accent-indigo-500 h-1 bg-slate-800 rounded-lg cursor-pointer"
-                />
-                <div className="flex justify-between text-[11px] text-slate-400">
-                  <span>{secondsToTimestamp(videoCurrentTime)}</span>
-                  <span>{secondsToTimestamp(videoDuration)}</span>
-                </div>
-              </div>
-            )}
-
-            {/* Subtitle Customizer Bar */}
-            <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2 text-xs">
-              <span className="font-semibold text-slate-300 block">
-                🎨 {isKm ? 'រចនាទម្រង់ Subtitle លើវីដេអូ' : 'Subtitle Display Style'}
-              </span>
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <label className="text-[10px] text-slate-500 block mb-1">{isKm ? 'ទំហំអក្សរ' : 'Font Size'}</label>
-                  <select
-                    value={subFontSize}
-                    onChange={(e) => setSubFontSize(Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-1 text-[11px] text-slate-200"
-                  >
-                    <option value={15}>Small (15px)</option>
-                    <option value={20}>Medium (20px)</option>
-                    <option value={26}>Large (26px)</option>
-                    <option value={32}>Extra (32px)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-[10px] text-slate-500 block mb-1">{isKm ? 'ផ្ទៃខាងក្រោយ' : 'Box Style'}</label>
-                  <select
-                    value={subBgStyle}
-                    onChange={(e) => setSubBgStyle(e.target.value as any)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-1 text-[11px] text-slate-200"
-                  >
-                    <option value="cinema">Cinema Black</option>
-                    <option value="pill">Indigo Glow</option>
-                    <option value="shadow">Shadow Only</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-[10px] text-slate-500 block mb-1">{isKm ? 'ទីតាំង' : 'Position'}</label>
-                  <select
-                    value={subPosition}
-                    onChange={(e) => setSubPosition(e.target.value as any)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-1 text-[11px] text-slate-200"
-                  >
-                    <option value="bottom">Bottom (ក្រោម)</option>
-                    <option value="center">Center (កណ្តាល)</option>
-                    <option value="top">Top (លើ)</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {/* Quick Action: Send to Multi-Speaker TTS dubbing */}
-            <button
-              onClick={() => onSendToMultiSpeakerTts(srtList)}
-              className="w-full flex items-center justify-center space-x-2 py-2.5 px-4 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-200 text-xs font-bold transition-all cursor-pointer"
-            >
-              <Volume2 className="w-4 h-4 text-purple-400" />
-              <span>{isKm ? 'បង្កើតសំឡេងអានបែងចែកប្រុសស្រី (Dubbing)' : 'Generate Multi-Speaker Voice Dubbing'}</span>
-            </button>
           </div>
+
+          {/* Quick Action: Send to Multi-Speaker TTS dubbing */}
+          <button
+            onClick={() => onSendToMultiSpeakerTts(srtList)}
+            className="w-full flex items-center justify-center space-x-2 py-2.5 px-4 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-200 text-xs font-bold transition-all cursor-pointer shadow-sm"
+          >
+            <Volume2 className="w-4 h-4 text-purple-400" />
+            <span>{isKm ? 'បង្កើតសំឡេងអានបែងចែកប្រុសស្រី (Dubbing)' : 'Generate Multi-Speaker Voice Dubbing'}</span>
+          </button>
         </div>
 
-        {/* Right: Subtitle Entries Editor Form with BATCH PROCESSING TOOL */}
+        {/* Right: Subtitle Entries Editor Form with BATCH AUTO-TRANSLATE */}
         <div className="lg:col-span-7 space-y-4">
           
           {/* ========================================================= */}
-          {/* POWERFUL BATCH SELECTION & AUTO-TRANSLATION TOOLBAR */}
+          {/* BATCH SELECTION & AUTO-TRANSLATION TOOLBAR */}
           {/* ========================================================= */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-3.5">
-            {/* Header: Batch Mode Status & Selection Counters */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
               <div className="flex items-center space-x-2.5">
                 <div className="p-1.5 rounded-lg bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
@@ -915,28 +824,31 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
           </div>
 
           {/* ========================================================= */}
-          {/* Cues List with Interactive Multi-Selection Checkboxes */}
+          {/* Cues List with Real-Time Video Preview Synchronization */}
           {/* ========================================================= */}
           <div className="space-y-3 max-h-[620px] overflow-y-auto pr-1">
             {srtList.map((cue) => {
               const isSelected = selectedIds.has(cue.id);
               const isActiveInVideo = activeSubtitle?.id === cue.id;
+              const isBeingEdited = focusedCue?.id === cue.id;
 
               return (
                 <div
                   key={cue.id}
                   className={`bg-slate-900 border rounded-xl p-3.5 transition-all ${
-                    isSelected
+                    isBeingEdited
+                      ? 'border-emerald-500 ring-2 ring-emerald-500/30 bg-slate-900 shadow-md'
+                      : isSelected
                       ? 'border-indigo-500 bg-indigo-950/20 ring-1 ring-indigo-500/40 shadow-sm'
                       : isActiveInVideo
                       ? 'border-amber-500 ring-1 ring-amber-500/50 bg-slate-900/95'
                       : 'border-slate-800 hover:border-slate-700'
                   }`}
                 >
-                  {/* Row Header: Selection Checkbox, Index, Timestamps, Speaker Role, Actions */}
+                  {/* Row Header: Checkbox, Index, Timestamps, Jump Preview, Actions */}
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-2 text-xs">
                     <div className="flex items-center space-x-2">
-                      {/* BATCH SELECTION CHECKBOX */}
+                      {/* Batch Selection Checkbox */}
                       <button
                         onClick={() => toggleSelect(cue.id)}
                         className={`p-1 rounded-md transition-colors cursor-pointer ${
@@ -969,18 +881,19 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
                         className="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-slate-300 font-mono text-[11px] w-24 text-center focus:ring-1 focus:ring-indigo-500"
                       />
 
-                      {/* Jump Video Button */}
+                      {/* Live Video Preview Button for this Cue */}
                       <button
-                        onClick={() => jumpVideoToCue(cue.startTime)}
-                        title={isKm ? 'រំកិលវីដេអូទៅពេលនេះ' : 'Jump video to this cue'}
-                        className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-indigo-400 cursor-pointer"
+                        onClick={() => jumpVideoToCue(cue)}
+                        title={isKm ? 'មើល Subtitle នេះលើវីដេអូផ្ទាល់' : 'Preview this subtitle on video'}
+                        className="flex items-center space-x-1 px-2 py-1 rounded bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 font-semibold cursor-pointer text-[11px]"
                       >
-                        <Play className="w-3 h-3" />
+                        <Play className="w-3 h-3 fill-current" />
+                        <span className="hidden sm:inline">{isKm ? 'មើលលើវីដេអូ' : 'Preview'}</span>
                       </button>
                     </div>
 
                     <div className="flex items-center space-x-2">
-                      {/* Speaker Selector (Male / Female / Narrator) */}
+                      {/* Speaker Selector */}
                       <select
                         value={cue.speaker}
                         onChange={(e) => handleUpdateCue(cue.id, 'speaker', e.target.value)}
@@ -1030,13 +943,29 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
                     </div>
                   </div>
 
-                  {/* Subtitle Text Content */}
-                  <textarea
-                    value={cue.text}
-                    onChange={(e) => handleUpdateCue(cue.id, 'text', e.target.value)}
-                    rows={2}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 placeholder:text-slate-600 resize-none font-medium"
-                  />
+                  {/* Subtitle Text Content with Real-Time Video Reflection on Typing */}
+                  <div className="relative">
+                    <textarea
+                      value={cue.text}
+                      onFocus={() => {
+                        setFocusedCue(cue);
+                        // Align video to this cue's timing for visual preview
+                        if (videoRef.current) {
+                          videoRef.current.currentTime = timestampToSeconds(cue.startTime);
+                        }
+                      }}
+                      onChange={(e) => {
+                        handleUpdateCue(cue.id, 'text', e.target.value);
+                      }}
+                      rows={2}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 placeholder:text-slate-600 resize-none font-medium"
+                    />
+                    {isBeingEdited && (
+                      <span className="absolute bottom-2 right-2 text-[10px] text-emerald-400 font-semibold bg-slate-900/90 px-1.5 py-0.5 rounded border border-emerald-500/30">
+                        {isKm ? '⚡ Live on Video' : '⚡ Live on Video'}
+                      </span>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -1050,6 +979,33 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Floating Picture-in-Picture Mini Video Preview Widget */}
+      {isMiniPreviewVisible && (
+        <SrtVideoPreview
+          videoRef={videoRef}
+          videoSrc={videoSrc}
+          setVideoSrc={setVideoSrc}
+          videoCurrentTime={videoCurrentTime}
+          setVideoCurrentTime={setVideoCurrentTime}
+          videoDuration={videoDuration}
+          isPlayingVideo={isPlayingVideo}
+          toggleVideoPlay={toggleVideoPlay}
+          activeSubtitle={activeSubtitle}
+          focusedCue={focusedCue}
+          subFontSize={subFontSize}
+          setSubFontSize={setSubFontSize}
+          subColor={subColor}
+          setSubColor={setSubColor}
+          subBgStyle={subBgStyle}
+          setSubBgStyle={setSubBgStyle}
+          subPosition={subPosition}
+          setSubPosition={setSubPosition}
+          isKm={isKm}
+          isMini={true}
+          onCloseMini={() => setIsMiniPreviewVisible(false)}
+        />
+      )}
     </div>
   );
 };

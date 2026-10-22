@@ -109,7 +109,7 @@ export function exportFullBackup(): string {
   const data: BackupProjectData = {
     version: '1.0.0',
     timestamp: new Date().toISOString(),
-    activeProjectName: 'KromStory_AI_Backup',
+    activeProjectName: 'KHS_AI_STORYLINE_Backup',
     srtList: loadStoredSrtItems(),
     savedRecaps: loadSavedRecaps(),
     translationHistory: [],

@@ -379,7 +379,7 @@ async function setupApp() {
   }
 
   app.listen(Number(PORT), '0.0.0.0', () => {
-    console.log(`[KromStory AI Studio] Server listening on port ${PORT}`);
+    console.log(`[KHS AI STORYLINE Studio] Server listening on port ${PORT}`);
   });
 }
 

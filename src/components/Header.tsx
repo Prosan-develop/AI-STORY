@@ -38,7 +38,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div>
             <div className="flex items-center space-x-2">
               <span className="font-extrabold tracking-tight text-lg bg-clip-text text-transparent bg-gradient-to-r from-white via-indigo-100 to-indigo-300">
-                KromStory <span className="text-indigo-400">AI</span>
+                KHS AI <span className="text-indigo-400">STORYLINE</span>
               </span>
               <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
                 Studio Pro
