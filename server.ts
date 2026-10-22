@@ -246,6 +246,91 @@ Respond ONLY with a JSON array:
   }
 });
 
+// 4b. Auto-Adjust Subtitle Timings (Scene Cuts & Audio Silence Gaps via Gemini AI)
+app.post('/api/auto-align-timing', async (req: Request, res: Response) => {
+  try {
+    const { 
+      srtItems, 
+      detectedSilenceGaps = [], 
+      detectedSceneCuts = [], 
+      videoDuration, 
+      alignmentMode = 'Natural Cinematic Pacing' 
+    } = req.body;
+
+    if (!Array.isArray(srtItems) || srtItems.length === 0) {
+      return res.status(400).json({ error: 'Missing or empty srtItems array.' });
+    }
+
+    const ai = getAi();
+    const minimalItems = srtItems.slice(0, 100).map((c) => ({
+      id: c.id,
+      index: c.index,
+      startTime: c.startTime,
+      endTime: c.endTime,
+      speaker: c.speaker || 'narrator',
+      text: c.text,
+      charCount: (c.text || '').length,
+    }));
+
+    const systemPrompt = `You are a world-class post-production subtitle timing and conforming engineer (Netflix/Broadcast Subtitling Guidelines).
+Your task is to analyze subtitle cue timings and adjust their startTime and endTime to perfectly match scene transitions, audio silence gaps, and natural speech delivery.
+
+Rules to enforce:
+1. Audio Silence Gaps: If an audio silence gap exists immediately before or after a subtitle, snap the cue boundaries so subtitles do not linger into silence or start prematurely.
+2. Scene Cuts / Shot Transitions: Subtitles should never bleed over a hard scene cut by a few frames. If speech ends before a cut, snap the endTime to 2-3 frames (~80-100ms) before the cut.
+3. Reading Cadence (CPS): Ensure comfortable reading speed (12-18 characters per second). Minimum display duration is 1.2s (even for short words); maximum cue duration is 7.0s.
+4. Chaining & Gap Hygiene: If the gap between two consecutive cues is between 50ms and 200ms, snap them to have a clean 2-frame (66ms) interval, or preserve genuine dialogue pauses (>350ms).
+5. Output strict SRT timestamps: "HH:MM:SS,mmm" (e.g. "00:01:23,450").
+6. Alignment Mode requested: ${alignmentMode}.
+
+Respond ONLY with valid JSON matching this schema:
+{
+  "summary": "Short 1-2 sentence overview of adjustments made",
+  "totalAdjusted": number,
+  "adjustedItems": [
+    {
+      "id": "matching-input-id",
+      "index": number,
+      "startTime": "HH:MM:SS,mmm",
+      "endTime": "HH:MM:SS,mmm",
+      "adjustmentReason": "string explanation of reason (e.g. Snapped to silence gap / Trimmed before scene cut / Extended for reading comfort)"
+    }
+  ]
+}`;
+
+    const contextPayload = {
+      mode: alignmentMode,
+      videoDurationSeconds: videoDuration || null,
+      detectedSilenceGaps: detectedSilenceGaps.slice(0, 30),
+      detectedSceneCuts: detectedSceneCuts.slice(0, 30),
+      cues: minimalItems,
+    };
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: JSON.stringify(contextPayload),
+      config: {
+        systemInstruction: systemPrompt,
+        responseMimeType: 'application/json',
+        temperature: 0.2,
+      },
+    });
+
+    let rawText = response.text?.trim() || '{}';
+    if (rawText.startsWith('```json')) {
+      rawText = rawText.replace(/^```json/, '').replace(/```$/, '').trim();
+    } else if (rawText.startsWith('```')) {
+      rawText = rawText.replace(/^```/, '').replace(/```$/, '').trim();
+    }
+
+    const parsedResult = JSON.parse(rawText);
+    return res.json(parsedResult);
+  } catch (error: any) {
+    console.error('Auto-align timing error:', error);
+    return res.status(500).json({ error: error?.message || 'Failed to auto-align subtitle timings.' });
+  }
+});
+
 // 5. OCR & Image Translation (Preserving Spatial Layout)
 app.post('/api/ocr-translate', async (req: Request, res: Response) => {
   try {

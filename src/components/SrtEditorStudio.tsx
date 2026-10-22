@@ -36,6 +36,7 @@ import {
 import { saveStoredSrtItems } from '../utils/storage';
 import { speakBrowserText, stopSpeaking } from '../utils/khmerSpeech';
 import { SrtVideoPreview } from './SrtVideoPreview';
+import { AutoAlignTimingModal } from './AutoAlignTimingModal';
 
 interface SrtEditorStudioProps {
   appLang: 'km' | 'en';
@@ -84,6 +85,9 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
   const [translationTone, setTranslationTone] = useState<string>('Cinematic Movie Dialogue');
   const [activePlayingCueId, setActivePlayingCueId] = useState<string | null>(null);
   const [batchSuccessMessage, setBatchSuccessMessage] = useState<string | null>(null);
+
+  // Auto-Align Timings Modal State
+  const [isAutoAlignOpen, setIsAutoAlignOpen] = useState<boolean>(false);
 
   // Currently active subtitle on video according to timeline
   const activeSubtitle = srtList.find((cue) => {
@@ -473,6 +477,16 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
 
         {/* Buttons: Floating Mini Preview toggle, Import, Export, Add Cue */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Auto-Align Timings with Scene Cuts & Audio Silence Gaps via Gemini API */}
+          <button
+            onClick={() => setIsAutoAlignOpen(true)}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-amber-500/20 hover:from-amber-500/30 hover:to-orange-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold transition-all cursor-pointer shadow-sm"
+            title={isKm ? 'តម្រឹមម៉ោង Subtitle ស្វ័យប្រវត្តិតាម Scene Cuts & Silence Gaps ដោយប្រើ Gemini API' : 'Auto-align subtitle start and end times to match scene cuts & silence gaps using Gemini API'}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span>{isKm ? 'តម្រឹមម៉ោង AI (Auto-Align)' : 'AI Auto-Align'}</span>
+          </button>
+
           {/* Toggle Floating Mini Preview Button */}
           <button
             onClick={() => setIsMiniPreviewVisible(!isMiniPreviewVisible)}
@@ -1006,6 +1020,20 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
           onCloseMini={() => setIsMiniPreviewVisible(false)}
         />
       )}
+
+      {/* Auto-Align Timings Modal (Scene cuts & Audio silence gaps via Gemini API) */}
+      <AutoAlignTimingModal
+        isOpen={isAutoAlignOpen}
+        onClose={() => setIsAutoAlignOpen(false)}
+        srtList={srtList}
+        onApplyTimings={(adjustedItems) => {
+          setSrtList(adjustedItems);
+          saveStoredSrtItems(adjustedItems);
+        }}
+        appLang={appLang}
+        videoRef={videoRef}
+        videoDuration={videoDuration}
+      />
     </div>
   );
 };
