@@ -25,3 +25,85 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #475569;
 }
+
+/* SUBTITLE LIVE ANIMATION KEYFRAMES */
+
+/* 1. Fade-In */
+@keyframes subFadeIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.96) translateY(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+.sub-anim-fade-in {
+  animation: subFadeIn 0.26s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* 2. Pop / Spring Zoom (TikTok / Reels Style) */
+@keyframes subPop {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.sub-anim-pop {
+  animation: subPop 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* 3. Typewriter / Kinetic Reveal */
+@keyframes subTypewriter {
+  0% {
+    clip-path: inset(0 100% 0 0);
+    opacity: 0.6;
+  }
+  100% {
+    clip-path: inset(0 0 0 0);
+    opacity: 1;
+  }
+}
+.sub-anim-typewriter {
+  animation: subTypewriter 0.42s steps(24, end) forwards;
+}
+
+/* 4. Slide-Up */
+@keyframes subSlideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.sub-anim-slide-up {
+  animation: subSlideUp 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* 5. Glow / Neon Pulse */
+@keyframes subGlow {
+  0% {
+    filter: drop-shadow(0 0 4px rgba(99, 102, 241, 0.5));
+  }
+  50% {
+    filter: drop-shadow(0 0 16px rgba(168, 85, 247, 0.95)) drop-shadow(0 0 26px rgba(236, 72, 153, 0.8));
+  }
+  100% {
+    filter: drop-shadow(0 0 6px rgba(99, 102, 241, 0.5));
+  }
+}
+.sub-anim-glow-pulse {
+  animation: subGlow 1.8s infinite ease-in-out;
+}

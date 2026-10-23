@@ -1,5 +1,5 @@
 {
-  "name": "KromStory AI - កម្មវិធីសម្រាយរឿង & បកប្រែសំឡេង SRT Studio",
+  "name": "KHS AI STORYLINE - កម្មវិធីសម្រាយរឿង & បកប្រែសំឡេង SRT Studio",
   "description": "កម្មវិធីឆ្លាតវៃ AI សម្រាយរឿង បកប្រែភាសា ស្កេនរូបភាព កាត់សំឡេងចម្រៀង Vocal Remover បំប្លែងសំឡេងប្រុសស្រី កែសម្រួល SRT និងបញ្ចូល Subtitle ក្នុងវីដេអូ",
   "requestFramePermissions": [
     "camera",

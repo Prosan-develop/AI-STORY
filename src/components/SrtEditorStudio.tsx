@@ -22,13 +22,17 @@ import {
   CheckCircle2, 
   Eye, 
   Minimize2, 
-  Maximize2 
+  Maximize2,
+  Zap,
+  X,
+  HardDriveDownload
 } from 'lucide-react';
-import { SrtItem } from '../types';
+import { SrtItem, SubtitleAnimationPreset } from '../types';
 import { 
   parseSrt, 
   stringifySrt, 
   stringifyVtt, 
+  downloadSrtFile,
   shiftSrtTiming, 
   timestampToSeconds, 
   secondsToTimestamp 
@@ -37,6 +41,8 @@ import { saveStoredSrtItems } from '../utils/storage';
 import { speakBrowserText, stopSpeaking } from '../utils/khmerSpeech';
 import { SrtVideoPreview } from './SrtVideoPreview';
 import { AutoAlignTimingModal } from './AutoAlignTimingModal';
+import { SubtitleAnimationModal } from './SubtitleAnimationModal';
+import { ExportSrtModal } from './ExportSrtModal';
 
 interface SrtEditorStudioProps {
   appLang: 'km' | 'en';
@@ -88,6 +94,14 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
 
   // Auto-Align Timings Modal State
   const [isAutoAlignOpen, setIsAutoAlignOpen] = useState<boolean>(false);
+
+  // Subtitle Animation Preset State (CSS Keyframes & .ASS)
+  const [animationPreset, setAnimationPreset] = useState<SubtitleAnimationPreset>('pop');
+  const [isAnimationModalOpen, setIsAnimationModalOpen] = useState<boolean>(false);
+
+  // Formatted .SRT Direct Export Modal & Toast States
+  const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
+  const [exportToastMessage, setExportToastMessage] = useState<string | null>(null);
 
   // Currently active subtitle on video according to timeline
   const activeSubtitle = srtList.find((cue) => {
@@ -170,16 +184,31 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
     reader.readAsText(file);
   };
 
-  // Export SRT
+  // Quick 1-Click Export SRT directly to user device with UTF-8 BOM
+  const handleQuickExportSrt = () => {
+    if (srtList.length === 0) {
+      alert(isKm ? 'សូមបញ្ចូល ឬបង្កើត Subtitle ជាមុនសិន!' : 'No subtitles to export. Please add or import subtitles first.');
+      return;
+    }
+    const result = downloadSrtFile(srtList, {
+      includeSpeakerTags: false,
+      addUtf8Bom: true,
+      cleanWhitespace: true,
+      reindexSequentially: true,
+      filename: `khs_subtitles_${new Date().toISOString().slice(0, 10)}.srt`,
+    });
+    if (result.success) {
+      const msg = isKm 
+        ? `បានទាញយកឯកសារ "${result.filename}" (${result.cueCount} ជួរ) ទៅកាន់ Device ដោយជោគជ័យ!` 
+        : `Successfully exported "${result.filename}" (${result.cueCount} cues) to your device!`;
+      setExportToastMessage(msg);
+      setTimeout(() => setExportToastMessage(null), 4000);
+    }
+  };
+
+  // Open Full Export Formatted SRT Dialog
   const exportSrtFile = () => {
-    const str = stringifySrt(srtList);
-    const blob = new Blob([str], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `subtitles_${Date.now()}.srt`;
-    a.click();
-    URL.revokeObjectURL(url);
+    setIsExportModalOpen(true);
   };
 
   // Export VTT
@@ -475,8 +504,21 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
           )}
         </div>
 
-        {/* Buttons: Floating Mini Preview toggle, Import, Export, Add Cue */}
+        {/* Buttons: Animation Presets, Auto-Align, Floating Mini Preview toggle, Import, Export, Add Cue */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Animation Presets & CSS Generator */}
+          <button
+            onClick={() => setIsAnimationModalOpen(true)}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-pink-500/20 via-purple-500/20 to-indigo-500/20 hover:from-pink-500/30 hover:to-indigo-500/30 border border-purple-500/40 text-purple-200 text-xs font-bold transition-all cursor-pointer shadow-sm"
+            title={isKm ? 'កំណត់ចលនា Subtitle (Fade-in, Pop, Typewriter) & បង្កើតកូដ CSS' : 'Subtitle Animation Presets (Fade-in, Pop, Typewriter) & CSS Generator'}
+          >
+            <Zap className="w-3.5 h-3.5 text-amber-300" />
+            <span>{isKm ? 'ចលនា & CSS (Animations)' : 'Animations & CSS'}</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/30 text-purple-300 uppercase font-mono font-bold">
+              {animationPreset}
+            </span>
+          </button>
+
           {/* Auto-Align Timings with Scene Cuts & Audio Silence Gaps via Gemini API */}
           <button
             onClick={() => setIsAutoAlignOpen(true)}
@@ -484,7 +526,7 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
             title={isKm ? 'តម្រឹមម៉ោង Subtitle ស្វ័យប្រវត្តិតាម Scene Cuts & Silence Gaps ដោយប្រើ Gemini API' : 'Auto-align subtitle start and end times to match scene cuts & silence gaps using Gemini API'}
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>{isKm ? 'តម្រឹមម៉ោង AI (Auto-Align)' : 'AI Auto-Align'}</span>
+            <span>{isKm ? 'តម្រឹមម៉ោង AI' : 'AI Auto-Align'}</span>
           </button>
 
           {/* Toggle Floating Mini Preview Button */}
@@ -498,7 +540,7 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
             title={isKm ? 'បើកផ្ទាំងវីដេអូ Preview តូចបណ្តែត (Picture-in-Picture)' : 'Toggle Floating Mini Video Preview'}
           >
             <Eye className="w-3.5 h-3.5 text-purple-400" />
-            <span>{isKm ? (isMiniPreviewVisible ? 'បិទ Mini Preview' : 'ផ្ទាំង Preview តូច (PiP)') : (isMiniPreviewVisible ? 'Hide Mini Preview' : 'Mini Video Preview')}</span>
+            <span>{isKm ? (isMiniPreviewVisible ? 'បិទ Mini PiP' : 'ផ្ទាំង PiP') : (isMiniPreviewVisible ? 'Hide Mini' : 'Mini PiP')}</span>
           </button>
 
           <input
@@ -516,13 +558,27 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
             <span>{isKm ? 'បញ្ចូល .SRT' : 'Import .SRT'}</span>
           </button>
 
-          <button
-            onClick={exportSrtFile}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition-colors cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5 text-emerald-400" />
-            <span>.SRT</span>
-          </button>
+          {/* Dedicated Primary Formatted .SRT Export to Device Button */}
+          <div className="inline-flex items-center rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 p-[1px] shadow-md shadow-emerald-500/20">
+            <button
+              onClick={() => setIsExportModalOpen(true)}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-l-xl bg-slate-900 hover:bg-emerald-950/50 text-xs font-bold text-emerald-300 hover:text-emerald-100 transition-all cursor-pointer"
+              title={isKm ? 'បើកផ្ទាំងនាំចេញ .SRT (កំណត់ឈ្មោះ & ទម្រង់)' : 'Open Formatted .SRT Export Dialog'}
+            >
+              <HardDriveDownload className="w-3.5 h-3.5 text-emerald-400" />
+              <span>{isKm ? 'ទាញយក .SRT' : 'Export .SRT'}</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 font-mono font-semibold">
+                {srtList.length}
+              </span>
+            </button>
+            <button
+              onClick={handleQuickExportSrt}
+              className="px-2 py-1.5 rounded-r-xl bg-slate-900 hover:bg-emerald-900/60 border-l border-emerald-500/30 text-emerald-300 hover:text-white text-[10px] font-bold transition-colors cursor-pointer"
+              title={isKm ? 'ទាញយកឯកសារ .SRT ភ្លាមៗ (1-Click Direct Download)' : '1-Click Direct Download .SRT to Device'}
+            >
+              ⚡ 1-Click
+            </button>
+          </div>
 
           <button
             onClick={exportVttFile}
@@ -565,6 +621,9 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
             setSubBgStyle={setSubBgStyle}
             subPosition={subPosition}
             setSubPosition={setSubPosition}
+            animationPreset={animationPreset}
+            setAnimationPreset={setAnimationPreset}
+            onOpenAnimationModal={() => setIsAnimationModalOpen(true)}
             isKm={isKm}
             onToggleMini={() => setIsMiniPreviewVisible(true)}
           />
@@ -824,6 +883,16 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
                     </button>
                   </div>
 
+                  {/* Batch Export Selected as Formatted .SRT */}
+                  <button
+                    onClick={() => setIsExportModalOpen(true)}
+                    className="flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold transition-colors cursor-pointer"
+                    title={isKm ? 'ទាញយកជួរដែលបានជ្រើសរើសជា .SRT' : 'Export selected lines as .SRT file'}
+                  >
+                    <Download className="w-3 h-3 text-emerald-400" />
+                    <span>{isKm ? `ទាញយក (${selectedCount})` : `Export (${selectedCount})`}</span>
+                  </button>
+
                   {/* Batch Delete */}
                   <button
                     onClick={handleBatchDeleteSelected}
@@ -1015,6 +1084,9 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
           setSubBgStyle={setSubBgStyle}
           subPosition={subPosition}
           setSubPosition={setSubPosition}
+          animationPreset={animationPreset}
+          setAnimationPreset={setAnimationPreset}
+          onOpenAnimationModal={() => setIsAnimationModalOpen(true)}
           isKm={isKm}
           isMini={true}
           onCloseMini={() => setIsMiniPreviewVisible(false)}
@@ -1034,6 +1106,47 @@ export const SrtEditorStudio: React.FC<SrtEditorStudioProps> = ({
         videoRef={videoRef}
         videoDuration={videoDuration}
       />
+
+      {/* Subtitle Animation Preset & CSS/ASS Overlay Generator Modal */}
+      <SubtitleAnimationModal
+        isOpen={isAnimationModalOpen}
+        onClose={() => setIsAnimationModalOpen(false)}
+        srtList={srtList}
+        currentPreset={animationPreset}
+        onSelectPreset={(preset) => setAnimationPreset(preset)}
+        subFontSize={subFontSize}
+        subColor={subColor}
+        subPosition={subPosition}
+        isKm={isKm}
+      />
+
+      {/* Formatted .SRT Export to Device Modal */}
+      <ExportSrtModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        srtList={srtList}
+        selectedIds={selectedIds}
+        isKm={isKm}
+        onSuccessNotification={(msg) => {
+          setExportToastMessage(msg);
+          setTimeout(() => setExportToastMessage(null), 4500);
+        }}
+      />
+
+      {/* Floating Export Toast Notification */}
+      {exportToastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center space-x-3 bg-slate-900/95 border border-emerald-500/50 text-emerald-200 px-4 py-3 rounded-2xl shadow-2xl shadow-emerald-500/20 backdrop-blur-md animate-in slide-in-from-bottom-3 duration-300">
+          <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+          <span className="text-xs font-semibold">{exportToastMessage}</span>
+          <button 
+            onClick={() => setExportToastMessage(null)}
+            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+            aria-label="Dismiss"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   );
 };

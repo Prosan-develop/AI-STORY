@@ -9,6 +9,23 @@ export type LanguageCode =
   | 'fr'
   | 'es';
 
+export type SubtitleAnimationPreset = 
+  | 'none'
+  | 'fade-in'
+  | 'pop'
+  | 'typewriter'
+  | 'slide-up'
+  | 'glow-pulse';
+
+export interface SrtExportOptions {
+  includeSpeakerTags?: boolean;
+  speakerPrefixFormat?: 'brackets' | 'colon' | 'none'; // [ប្រុស] vs ប្រុស: vs none
+  filename?: string;
+  addUtf8Bom?: boolean;
+  cleanWhitespace?: boolean;
+  reindexSequentially?: boolean;
+}
+
 export interface SrtItem {
   id: string;
   index: number;

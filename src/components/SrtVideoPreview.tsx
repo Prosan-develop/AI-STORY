@@ -11,9 +11,10 @@ import {
   Eye, 
   Sliders, 
   Palette,
-  X
+  X,
+  Zap
 } from 'lucide-react';
-import { SrtItem } from '../types';
+import { SrtItem, SubtitleAnimationPreset } from '../types';
 import { secondsToTimestamp } from '../utils/srtParser';
 
 interface SrtVideoPreviewProps {
@@ -35,6 +36,9 @@ interface SrtVideoPreviewProps {
   setSubBgStyle: (style: 'cinema' | 'pill' | 'shadow') => void;
   subPosition: 'bottom' | 'center' | 'top';
   setSubPosition: (pos: 'bottom' | 'center' | 'top') => void;
+  animationPreset?: SubtitleAnimationPreset;
+  setAnimationPreset?: (preset: SubtitleAnimationPreset) => void;
+  onOpenAnimationModal?: () => void;
   isKm: boolean;
   isMini?: boolean;
   onToggleMini?: () => void;
@@ -60,6 +64,9 @@ export const SrtVideoPreview: React.FC<SrtVideoPreviewProps> = ({
   setSubBgStyle,
   subPosition,
   setSubPosition,
+  animationPreset = 'fade-in',
+  setAnimationPreset,
+  onOpenAnimationModal,
   isKm,
   isMini = false,
   onToggleMini,
@@ -67,8 +74,7 @@ export const SrtVideoPreview: React.FC<SrtVideoPreviewProps> = ({
 }) => {
   const videoInputRef = useRef<HTMLInputElement>(null);
 
-  // If user is focused on a specific cue, prioritize displaying that cue in real-time,
-  // otherwise fallback to the time-synchronized subtitle
+  // If user is focused on a specific cue, prioritize displaying that cue in real-time
   const displayedSubtitle = focusedCue || activeSubtitle;
 
   const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -85,6 +91,17 @@ export const SrtVideoPreview: React.FC<SrtVideoPreviewProps> = ({
     setVideoSrc('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4');
   };
 
+  const getAnimClass = () => {
+    switch (animationPreset) {
+      case 'fade-in': return 'sub-anim-fade-in';
+      case 'pop': return 'sub-anim-pop';
+      case 'typewriter': return 'sub-anim-typewriter';
+      case 'slide-up': return 'sub-anim-slide-up';
+      case 'glow-pulse': return 'sub-anim-glow-pulse';
+      default: return '';
+    }
+  };
+
   // Mini Floating Picture-in-Picture layout
   if (isMini) {
     return (
@@ -97,6 +114,15 @@ export const SrtVideoPreview: React.FC<SrtVideoPreviewProps> = ({
           </div>
 
           <div className="flex items-center space-x-1">
+            {onOpenAnimationModal && (
+              <button
+                onClick={onOpenAnimationModal}
+                className="p-1 rounded-md text-amber-400 hover:bg-slate-800"
+                title={isKm ? 'ចលនា & កូដ CSS' : 'Animations & CSS'}
+              >
+                <Zap className="w-3.5 h-3.5" />
+              </button>
+            )}
             {onToggleMini && (
               <button
                 onClick={onToggleMini}
@@ -140,7 +166,7 @@ export const SrtVideoPreview: React.FC<SrtVideoPreviewProps> = ({
             </div>
           )}
 
-          {/* REAL-TIME SUBTITLE OVERLAY */}
+          {/* REAL-TIME ANIMATED SUBTITLE OVERLAY */}
           {displayedSubtitle && (
             <div
               className={`absolute left-0 right-0 px-2 text-center pointer-events-none transition-all duration-150 z-20 ${
@@ -152,6 +178,7 @@ export const SrtVideoPreview: React.FC<SrtVideoPreviewProps> = ({
               }`}
             >
               <span
+                key={displayedSubtitle.id + (focusedCue ? '-edit' : '')}
                 style={{
                   fontSize: `${Math.max(12, subFontSize * 0.75)}px`,
                   color: subColor,
@@ -162,7 +189,7 @@ export const SrtVideoPreview: React.FC<SrtVideoPreviewProps> = ({
                     : subBgStyle === 'pill'
                     ? 'bg-indigo-950/90 text-indigo-100 border border-indigo-500/40'
                     : 'drop-shadow-[0_2px_4px_rgba(0,0,0,1)]'
-                }`}
+                } ${getAnimClass()}`}
               >
                 {displayedSubtitle.speaker !== 'narrator' && (
                   <span className="text-[10px] opacity-75 mr-1 font-normal">
@@ -199,11 +226,16 @@ export const SrtVideoPreview: React.FC<SrtVideoPreviewProps> = ({
             </span>
           </div>
 
-          {displayedSubtitle && (
-            <span className="text-[10px] text-emerald-400 font-semibold truncate max-w-[150px]">
-              {focusedCue ? `Preview: #${displayedSubtitle.index}` : `Live: #${displayedSubtitle.index}`}
+          <div className="flex items-center space-x-1.5">
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 capitalize">
+              {animationPreset}
             </span>
-          )}
+            {displayedSubtitle && (
+              <span className="text-[10px] text-emerald-400 font-semibold truncate max-w-[120px]">
+                {focusedCue ? `Preview: #${displayedSubtitle.index}` : `Live: #${displayedSubtitle.index}`}
+              </span>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -266,7 +298,7 @@ export const SrtVideoPreview: React.FC<SrtVideoPreviewProps> = ({
           </div>
         )}
 
-        {/* DYNAMIC REAL-TIME SUBTITLE OVERLAY */}
+        {/* DYNAMIC REAL-TIME ANIMATED SUBTITLE OVERLAY */}
         {displayedSubtitle && (
           <div
             className={`absolute left-0 right-0 px-4 text-center pointer-events-none transition-all duration-150 z-20 ${
@@ -278,17 +310,18 @@ export const SrtVideoPreview: React.FC<SrtVideoPreviewProps> = ({
             }`}
           >
             <span
+              key={displayedSubtitle.id + (focusedCue ? '-edit' : '')}
               style={{
                 fontSize: `${subFontSize}px`,
                 color: subColor,
               }}
-              className={`inline-block font-semibold px-3 py-1 rounded-lg leading-snug max-w-[90%] transition-all ${
+              className={`inline-block font-semibold px-4 py-1.5 rounded-lg leading-snug max-w-[90%] transition-all ${
                 subBgStyle === 'cinema'
                   ? 'bg-black/85 shadow-md shadow-black/50 border border-white/10'
                   : subBgStyle === 'pill'
                   ? 'bg-indigo-950/90 text-indigo-100 border border-indigo-500/40'
                   : 'drop-shadow-[0_2px_4px_rgba(0,0,0,1)]'
-              }`}
+              } ${getAnimClass()}`}
             >
               {displayedSubtitle.speaker !== 'narrator' && (
                 <span className="text-xs opacity-75 mr-1 font-normal">
@@ -345,24 +378,58 @@ export const SrtVideoPreview: React.FC<SrtVideoPreviewProps> = ({
       )}
 
       {/* Subtitle Customizer Bar */}
-      <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2 text-xs">
+      <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2.5 text-xs">
         <div className="flex items-center justify-between">
           <span className="font-semibold text-slate-300 flex items-center space-x-1">
             <Palette className="w-3.5 h-3.5 text-indigo-400" />
             <span>{isKm ? 'រចនាទម្រង់ Subtitle លើវីដេអូ' : 'Subtitle Display Style'}</span>
           </span>
-          {onToggleMini && (
-            <button
-              onClick={onToggleMini}
-              className="text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center space-x-1 cursor-pointer"
-            >
-              <Minimize2 className="w-3 h-3" />
-              <span>{isKm ? 'បើកផ្ទាំងតូច (PiP)' : 'Floating Mini Player'}</span>
-            </button>
-          )}
+
+          <div className="flex items-center space-x-2">
+            {onOpenAnimationModal && (
+              <button
+                onClick={onOpenAnimationModal}
+                className="text-[11px] text-amber-300 hover:text-amber-200 font-semibold flex items-center space-x-1 px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/30 cursor-pointer shadow-sm"
+              >
+                <Zap className="w-3 h-3" />
+                <span>{isKm ? 'ចលនា & កូដ CSS' : 'CSS Effects'}</span>
+              </button>
+            )}
+
+            {onToggleMini && (
+              <button
+                onClick={onToggleMini}
+                className="text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center space-x-1 cursor-pointer"
+              >
+                <Minimize2 className="w-3 h-3" />
+                <span>{isKm ? 'ផ្ទាំងតូច (PiP)' : 'Mini Player'}</span>
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-2">
+        {/* 4 Customizer Dropdowns: Font Size, Box Style, Position, and Animation Preset */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {/* 1. Animation Preset Selector */}
+          <div>
+            <label className="text-[10px] text-amber-400 font-bold block mb-1">
+              ✨ {isKm ? 'ចលនា (Animation)' : 'Animation'}
+            </label>
+            <select
+              value={animationPreset}
+              onChange={(e) => setAnimationPreset?.(e.target.value as SubtitleAnimationPreset)}
+              className="w-full bg-slate-900 border border-amber-500/40 rounded-lg p-1 text-[11px] text-amber-200 font-semibold focus:outline-none"
+            >
+              <option value="fade-in">Fade-In (កុន)</option>
+              <option value="pop">Pop (TikTok/Reels)</option>
+              <option value="typewriter">Typewriter (វាយអក្សរ)</option>
+              <option value="slide-up">Slide-Up (រំកិល)</option>
+              <option value="glow-pulse">Glow (ភ្លើងណេអុង)</option>
+              <option value="none">None (ធម្មតា)</option>
+            </select>
+          </div>
+
+          {/* 2. Font Size */}
           <div>
             <label className="text-[10px] text-slate-500 block mb-1">{isKm ? 'ទំហំអក្សរ' : 'Font Size'}</label>
             <select
@@ -377,6 +444,7 @@ export const SrtVideoPreview: React.FC<SrtVideoPreviewProps> = ({
             </select>
           </div>
 
+          {/* 3. Box Style */}
           <div>
             <label className="text-[10px] text-slate-500 block mb-1">{isKm ? 'ផ្ទៃខាងក្រោយ' : 'Box Style'}</label>
             <select
@@ -390,6 +458,7 @@ export const SrtVideoPreview: React.FC<SrtVideoPreviewProps> = ({
             </select>
           </div>
 
+          {/* 4. Position */}
           <div>
             <label className="text-[10px] text-slate-500 block mb-1">{isKm ? 'ទីតាំង' : 'Position'}</label>
             <select
